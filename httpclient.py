@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # coding: utf-8
-# Copyright 2016 Abram Hindle, https://github.com/tywtyw2002, and https://github.com/treedust
+# Copyright 2023 Abram Hindle, https://github.com/tywtyw2002, https://github.com/treedust, and Aidan Horemans
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,13 +24,33 @@ import re
 # you may use urllib to encode data appropriately
 import urllib.parse
 
+GET = "GET"
+POST = "POST"
+HTTPVERSION = "HTTP/1.1"
+PORT = 80
+
 def help():
     print("httpclient.py [GET/POST] [URL]\n")
+
+class HTTPRequest(object):
+    def __init__(self, method: str, host: str, path: str, query: str):
+        print(host)
+        path = path or "/"
+        if query:
+            query = f"?{query}"
+        
+        userAgent = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
+
+        self.body = f"{method} {path}{query} {HTTPVERSION}\r\nHost: {host}\r\n{userAgent}\r\nAccept: */*\r\n\r\n"
+        #self.body += userAgent
 
 class HTTPResponse(object):
     def __init__(self, code=200, body=""):
         self.code = code
         self.body = body
+    
+    def __str__(self):
+        return f"{self.code} {self.body}"
 
 class HTTPClient(object):
     #def get_host_port(self,url):
@@ -40,23 +60,52 @@ class HTTPClient(object):
         self.socket.connect((host, port))
         return None
 
-    def get_code(self, data):
-        return None
+    # read through values from recvall, and parse the data out here
+    def get_code(self, data: str):
+        if not data:
+            return None
 
-    def get_headers(self,data):
+        split = data.splitlines()
+        if len(split) == 0:
+            return None
+
+        response = split[0].split() #get code out
+        if len(response) < 2:
+            return None
+
+        try:
+            code = int(response[1]) #if it's not a valid int, return
+        except:
+            return None
+
+        return code
+
+    def get_headers(self, data):
+        
         return None
 
     def get_body(self, data):
-        return None
-    
-    def sendall(self, data):
+        splitData = data.split('\r\n\r\n')
+        body = ""
+        if len(splitData) == 2:
+            body = splitData[1]
+        return body
+
+    # --------
+
+    def parse_url(self, url):
+        parsedUrl = urllib.parse.urlsplit(url)
+        return parsedUrl.hostname, parsedUrl.path, parsedUrl.query
+
+    def sendall(self, data: str):
         self.socket.sendall(data.encode('utf-8'))
+        self.socket.shutdown(socket.SHUT_WR) #tell server we're done talking
         
     def close(self):
         self.socket.close()
 
     # read everything from the socket
-    def recvall(self, sock):
+    def recvall(self, sock: socket.socket):
         buffer = bytearray()
         done = False
         while not done:
@@ -68,21 +117,36 @@ class HTTPClient(object):
         return buffer.decode('utf-8')
 
     def GET(self, url, args=None):
-        code = 500
-        body = ""
+        host, path, query = self.parse_url(url)
+
+        request = HTTPRequest(GET, host, path, query)
+
+        self.connect(host, PORT)
+        print(f"REQUEST\n{request.body}")
+        self.sendall(request.body)
+        response = self.recvall(self.socket)
+        print(f"RESPONSE\n{response}")
+        self.close()
+
+        code = self.get_code(response)
+        body = self.get_body(response)
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
+        host, path, query = self.parse_url(url)
+        print(args)
+
         code = 500
         body = ""
         return HTTPResponse(code, body)
 
     def command(self, url, command="GET", args=None):
+        print(f"COMMAND: {command}")
         if (command == "POST"):
             return self.POST( url, args )
         else:
             return self.GET( url, args )
-    
+
 if __name__ == "__main__":
     client = HTTPClient()
     command = "GET"
