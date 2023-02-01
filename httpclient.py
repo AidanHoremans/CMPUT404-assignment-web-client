@@ -33,16 +33,16 @@ def help():
     print("httpclient.py [GET/POST] [URL]\n")
 
 class HTTPRequest(object):
-    def __init__(self, method: str, host: str, path: str, query: str):
-        print(host)
+    def __init__(self, method: str, host: str, path: str, query: str, body: str):
         path = path or "/"
-        if query:
-            query = f"?{query}"
         
-        userAgent = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
+        userAgent = "User-Agent: curl/7.83.1"
 
-        self.body = f"{method} {path}{query} {HTTPVERSION}\r\nHost: {host}\r\n{userAgent}\r\nAccept: */*\r\n\r\n"
-        #self.body += userAgent
+        if query:
+            query = "?" + query
+
+        self.body = f"{method} {path}{query} {HTTPVERSION}\r\nHost: {host}\r\n{userAgent}\r\nAccept: */*\r\nContent-Length: {len(body)}\r\n\r\n{body}"
+
 
 class HTTPResponse(object):
     def __init__(self, code=200, body=""):
@@ -58,6 +58,9 @@ class HTTPClient(object):
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
+        self.socket.settimeout(5)
+        print(f"Connecting from: {self.socket.getsockname()}")
+        print(f"Connecting to: {self.socket.getpeername()}")
         return None
 
     # read through values from recvall, and parse the data out here
@@ -74,7 +77,7 @@ class HTTPClient(object):
             return None
 
         try:
-            code = int(response[1]) #if it's not a valid int, return
+            code = int(response[1]) #if not a valid int, return
         except:
             return None
 
@@ -95,7 +98,7 @@ class HTTPClient(object):
 
     def parse_url(self, url):
         parsedUrl = urllib.parse.urlsplit(url)
-        return parsedUrl.hostname, parsedUrl.path, parsedUrl.query
+        return parsedUrl.hostname, parsedUrl.port, parsedUrl.path, parsedUrl.query
 
     def sendall(self, data: str):
         self.socket.sendall(data.encode('utf-8'))
@@ -107,9 +110,13 @@ class HTTPClient(object):
     # read everything from the socket
     def recvall(self, sock: socket.socket):
         buffer = bytearray()
+
         done = False
         while not done:
-            part = sock.recv(1024)
+            try:
+                part = sock.recv(1024)
+            except:
+                return buffer.decode('utf-8')
             if (part):
                 buffer.extend(part)
             else:
@@ -117,11 +124,20 @@ class HTTPClient(object):
         return buffer.decode('utf-8')
 
     def GET(self, url, args=None):
-        host, path, query = self.parse_url(url)
+        host, port, path, query = self.parse_url(url)
 
-        request = HTTPRequest(GET, host, path, query)
+        body = ""
 
-        self.connect(host, PORT)
+        if args:
+            for arg, val in dict(args).items():
+                if not body:
+                    body += f"{arg}={val}"
+                else:
+                    body += f"&{arg}={val}"
+
+        request = HTTPRequest(GET, host, path, query, body)
+
+        self.connect(host, port or PORT)
         print(f"REQUEST\n{request.body}")
         self.sendall(request.body)
         response = self.recvall(self.socket)
@@ -133,15 +149,31 @@ class HTTPClient(object):
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
-        host, path, query = self.parse_url(url)
-        print(args)
+        host, port, path, query = self.parse_url(url)
 
-        code = 500
         body = ""
+
+        if args:
+            for arg, val in dict(args).items():
+                if not body:
+                    body += f"{arg}={val}"
+                else:
+                    body += f"&{arg}={val}"
+
+        request = HTTPRequest(POST, host, path, query, body)
+
+        self.connect(host, port or PORT)
+        print(f"REQUEST\n{request.body}")
+        self.sendall(request.body)
+        response = self.recvall(self.socket)
+        print(f"RESPONSE\n{response}")
+        self.close()
+
+        code = self.get_code(response)
+        body = self.get_body(response)
         return HTTPResponse(code, body)
 
     def command(self, url, command="GET", args=None):
-        print(f"COMMAND: {command}")
         if (command == "POST"):
             return self.POST( url, args )
         else:
