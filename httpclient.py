@@ -41,7 +41,12 @@ class HTTPRequest(object):
         if query:
             query = "?" + query
 
-        self.body = f"{method} {path}{query} {HTTPVERSION}\r\nHost: {host}\r\n{userAgent}\r\nAccept: */*\r\nContent-Length: {len(body)}\r\n\r\n{body}"
+        self.body = f"{method} {path}{query} {HTTPVERSION}\r\nHost: {host}\r\n{userAgent}\r\nAccept: */*\r\nContent-Length: {len(body)}\r\n"
+
+        if body:
+            self.body += f"Content-Length: {len(body)}\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\n{body}"
+        else:
+            self.body += f"\r\n\r\n" # empty body
 
 
 class HTTPResponse(object):
@@ -102,7 +107,7 @@ class HTTPClient(object):
 
     def sendall(self, data: str):
         self.socket.sendall(data.encode('utf-8'))
-        self.socket.shutdown(socket.SHUT_WR) #tell server we're done talking
+        #self.socket.shutdown(socket.SHUT_WR) #tell server we're done talking
         
     def close(self):
         self.socket.close()
@@ -114,7 +119,7 @@ class HTTPClient(object):
         done = False
         while not done:
             try:
-                part = sock.recv(1024)
+                part = sock.recv(1024) # need some way to break from this once no more data
             except:
                 return buffer.decode('utf-8')
             if (part):
