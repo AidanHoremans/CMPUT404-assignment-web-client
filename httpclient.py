@@ -117,7 +117,7 @@ class HTTPClient(object):
 
         while True:
             try:
-                part = sock.recv(50) # need some way to break from this once no more data
+                part = sock.recv(1024) # need some way to break from this once no more data
             except:
                 return buffer.decode('utf-8')
 
