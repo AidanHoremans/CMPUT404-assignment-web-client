@@ -41,7 +41,7 @@ class HTTPRequest(object):
         if query:
             query = "?" + query
 
-        self.body = f"{method} {path}{query} {HTTPVERSION}\r\nHost: {host}\r\n{userAgent}\r\nAccept: */*\r\nContent-Length: {len(body)}\r\n"
+        self.body = f"{method} {path}{query} {HTTPVERSION}\r\nHost: {host}\r\n{userAgent}\r\nAccept: */*\r\nContent-Length: {len(body)}\r\nConnection: close\r\n"
 
         if body:
             self.body += f"Content-Length: {len(body)}\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\n{body}"
@@ -63,7 +63,7 @@ class HTTPClient(object):
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
-        self.socket.settimeout(5)
+        self.socket.settimeout(2) #timeout of 2 seconds in case connection gets stuck
         print(f"Connecting from: {self.socket.getsockname()}")
         print(f"Connecting to: {self.socket.getpeername()}")
         return None
@@ -107,7 +107,6 @@ class HTTPClient(object):
 
     def sendall(self, data: str):
         self.socket.sendall(data.encode('utf-8'))
-        #self.socket.shutdown(socket.SHUT_WR) #tell server we're done talking
         
     def close(self):
         self.socket.close()
@@ -116,16 +115,17 @@ class HTTPClient(object):
     def recvall(self, sock: socket.socket):
         buffer = bytearray()
 
-        done = False
-        while not done:
+        while True:
             try:
-                part = sock.recv(1024) # need some way to break from this once no more data
+                part = sock.recv(50) # need some way to break from this once no more data
             except:
                 return buffer.decode('utf-8')
+
             if (part):
                 buffer.extend(part)
             else:
-                done = not part
+                break
+
         return buffer.decode('utf-8')
 
     def GET(self, url, args=None):
