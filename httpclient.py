@@ -41,10 +41,10 @@ class HTTPRequest(object):
         if query:
             query = "?" + query
 
-        self.body = f"{method} {path}{query} {HTTPVERSION}\r\nHost: {host}\r\n{userAgent}\r\nAccept: */*\r\nContent-Length: {len(body)}\r\nConnection: close\r\n"
+        self.body = f"{method} {path}{query} {HTTPVERSION}\r\nHost: {host}\r\n{userAgent}\r\nAccept: */*; charset=UTF-8\r\nContent-Length: {len(body)}\r\nConnection: close\r\n"
 
         if body:
-            self.body += f"Content-Length: {len(body)}\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\n{body}"
+            self.body += f"Content-Type: application/x-www-form-urlencoded\r\n\r\n{body}"
         else:
             self.body += f"\r\n\r\n" # empty body
 
@@ -55,7 +55,7 @@ class HTTPResponse(object):
         self.body = body
     
     def __str__(self):
-        return f"{self.code} {self.body}"
+        return f"---RESPONSE---\nCode:{self.code}\nBody:\n{self.body}"
 
 class HTTPClient(object):
     #def get_host_port(self,url):
@@ -63,7 +63,7 @@ class HTTPClient(object):
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
-        self.socket.settimeout(2) #timeout of 2 seconds in case connection gets stuck
+        self.socket.settimeout(4) #timeout of 2 seconds in case connection gets stuck
         print(f"Connecting from: {self.socket.getsockname()}")
         print(f"Connecting to: {self.socket.getpeername()}")
         return None
@@ -88,22 +88,20 @@ class HTTPClient(object):
 
         return code
 
-    def get_headers(self, data):
-        
-        return None
-
     def get_body(self, data):
         splitData = data.split('\r\n\r\n')
         body = ""
-        if len(splitData) == 2:
-            body = splitData[1]
+        print(len(splitData))
+        if len(splitData) >= 2:
+            for data in splitData[1:]:
+                body += data
         return body
 
     # --------
 
     def parse_url(self, url):
         parsedUrl = urllib.parse.urlsplit(url)
-        return parsedUrl.hostname, parsedUrl.port, parsedUrl.path, parsedUrl.query
+        return parsedUrl.scheme, parsedUrl.hostname, parsedUrl.port, parsedUrl.path, parsedUrl.query
 
     def sendall(self, data: str):
         self.socket.sendall(data.encode('utf-8'))
@@ -117,36 +115,38 @@ class HTTPClient(object):
 
         while True:
             try:
-                part = sock.recv(1024) # need some way to break from this once no more data
+                part = sock.recv(1024)
             except:
-                return buffer.decode('utf-8')
+                break
 
             if (part):
                 buffer.extend(part)
             else:
                 break
-
-        return buffer.decode('utf-8')
+        
+        try:
+            return buffer.decode('utf-8')
+        except:
+            return buffer.decode('latin-1') #why?
 
     def GET(self, url, args=None):
-        host, port, path, query = self.parse_url(url)
+        scheme, host, port, path, query = self.parse_url(url)
+
+        if scheme != "http":
+            print("Only http:// requests are accepted")
+            return
 
         body = ""
 
-        if args:
-            for arg, val in dict(args).items():
-                if not body:
-                    body += f"{arg}={val}"
-                else:
-                    body += f"&{arg}={val}"
+        if args and not query:
+            query = urllib.parse.urlencode(args)
 
         request = HTTPRequest(GET, host, path, query, body)
 
         self.connect(host, port or PORT)
-        print(f"REQUEST\n{request.body}")
+        print(f"---REQUEST---\n{request.body}")
         self.sendall(request.body)
         response = self.recvall(self.socket)
-        print(f"RESPONSE\n{response}")
         self.close()
 
         code = self.get_code(response)
@@ -154,24 +154,23 @@ class HTTPClient(object):
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
-        host, port, path, query = self.parse_url(url)
+        scheme, host, port, path, query = self.parse_url(url)
+
+        if scheme != "http":
+            print("Only http:// requests are accepted")
+            return
 
         body = ""
 
         if args:
-            for arg, val in dict(args).items():
-                if not body:
-                    body += f"{arg}={val}"
-                else:
-                    body += f"&{arg}={val}"
+            body = urllib.parse.urlencode(args)
 
         request = HTTPRequest(POST, host, path, query, body)
 
         self.connect(host, port or PORT)
-        print(f"REQUEST\n{request.body}")
+        print(f"---REQUEST---\n{request.body}")
         self.sendall(request.body)
         response = self.recvall(self.socket)
-        print(f"RESPONSE\n{response}")
         self.close()
 
         code = self.get_code(response)
