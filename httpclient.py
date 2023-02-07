@@ -20,7 +20,6 @@
 
 import sys
 import socket
-import re
 # you may use urllib to encode data appropriately
 import urllib.parse
 
@@ -41,7 +40,7 @@ class HTTPRequest(object):
         if query:
             query = "?" + query
 
-        self.body = f"{method} {path}{query} {HTTPVERSION}\r\nHost: {host}\r\n{userAgent}\r\nAccept: */*; charset=UTF-8\r\nContent-Length: {len(body)}\r\nConnection: close\r\n"
+        self.body = f"{method} {path}{query} {HTTPVERSION}\r\nHost: {host}\r\n{userAgent}\r\nAccept: text/*; charset=UTF-8\r\nContent-Length: {len(body)}\r\nConnection: close\r\n"
 
         if body:
             self.body += f"Content-Type: application/x-www-form-urlencoded\r\n\r\n{body}"
@@ -58,13 +57,11 @@ class HTTPResponse(object):
         return f"---RESPONSE---\nCode:{self.code}\nBody:\n{self.body}"
 
 class HTTPClient(object):
-    #def get_host_port(self,url):
-
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
-        self.socket.settimeout(4) #timeout of 2 seconds in case connection gets stuck
-        print(f"Connecting from: {self.socket.getsockname()}")
+        self.socket.settimeout(4) #timeout of 4 seconds in case connection gets stuck
+        print(f"Connecting from: {self.socket.getsockname()}") #for sanity
         print(f"Connecting to: {self.socket.getpeername()}")
         return None
 
@@ -91,8 +88,7 @@ class HTTPClient(object):
     def get_body(self, data):
         splitData = data.split('\r\n\r\n')
         body = ""
-        print(len(splitData))
-        if len(splitData) >= 2:
+        if len(splitData) >= 2: #if there are more than 1 \r\n\r\n in the response, just parse from the first (all others are assumed to be part of body)
             for data in splitData[1:]:
                 body += data
         return body
@@ -123,11 +119,11 @@ class HTTPClient(object):
                 buffer.extend(part)
             else:
                 break
-        
+
         try:
             return buffer.decode('utf-8')
         except:
-            return buffer.decode('latin-1') #why?
+            return buffer.decode('ISO-8859-1') #some sites return non utf-8 even though we explicitly ask for it? better safe than sorry
 
     def GET(self, url, args=None):
         scheme, host, port, path, query = self.parse_url(url)
@@ -138,8 +134,13 @@ class HTTPClient(object):
 
         body = ""
 
-        if args and not query:
-            query = urllib.parse.urlencode(args)
+        # if we were parsed args, add them to the query parameters if they exist, otherwise set them as the query parameters
+        if args:
+            parsedArgs = urllib.parse.urlencode(args)
+            if query:
+                query += f"&{parsedArgs}"
+            else:
+                query = parsedArgs
 
         request = HTTPRequest(GET, host, path, query, body)
 
