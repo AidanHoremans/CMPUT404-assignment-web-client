@@ -49,12 +49,16 @@ class HTTPRequest(object):
 
 
 class HTTPResponse(object):
-    def __init__(self, code=200, body=""):
+    def __init__(self, code=200, body="", headers=dict()):
         self.code = code
         self.body = body
+        self.headers = headers
     
     def __str__(self):
-        return f"---RESPONSE---\nCode:{self.code}\nBody:\n{self.body}"
+        prettyHeaders = ""
+        for headerName, header in self.headers.items():
+            prettyHeaders += f"{headerName}: {header}\n"
+        return f"---RESPONSE---\nCode:{self.code}\n\nHeaders:\n{prettyHeaders}\nBody:\n{self.body}"
 
 class HTTPClient(object):
     def connect(self, host, port):
@@ -65,7 +69,7 @@ class HTTPClient(object):
         print(f"Connecting to: {self.socket.getpeername()}")
         return None
 
-    # read through values from recvall, and parse the data out here
+    # --------get from response data--------
     def get_code(self, data: str):
         if not data:
             return None
@@ -85,7 +89,7 @@ class HTTPClient(object):
 
         return code
 
-    def get_body(self, data):
+    def get_body(self, data: str):
         splitData = data.split('\r\n\r\n')
         body = ""
         if len(splitData) >= 2: #if there are more than 1 \r\n\r\n in the response, just parse from the first (all others are assumed to be part of body)
@@ -93,7 +97,25 @@ class HTTPClient(object):
                 body += data
         return body
 
-    # --------
+    def get_headers(self, data: str):
+        headers = dict()
+        if not data:
+            return headers
+
+        split = data.splitlines()
+        if len(split) <= 1: #no headers
+            return headers
+
+        for header in split[1:]: #skip code
+            splitHeader = header.split(": ")
+            if len(splitHeader) <= 1:
+                break
+
+            headers[splitHeader[0]] = ": ".join(splitHeader[1:])
+
+        return headers
+
+    # -------- --------
 
     def parse_url(self, url):
         parsedUrl = urllib.parse.urlsplit(url)
@@ -123,8 +145,13 @@ class HTTPClient(object):
         try:
             return buffer.decode('utf-8')
         except:
-            return buffer.decode('ISO-8859-1') #some sites return non utf-8 even though we explicitly ask for it? better safe than sorry
+            try:
+                return buffer.decode('ISO-8859-1') 
+            except:
+                print("Server returned an unsupported charset")
+                return None
 
+    #---GET---
     def GET(self, url, args=None):
         scheme, host, port, path, query = self.parse_url(url)
 
@@ -148,12 +175,15 @@ class HTTPClient(object):
         print(f"---REQUEST---\n{request.body}")
         self.sendall(request.body)
         response = self.recvall(self.socket)
+        print(f"---RESPONSE---\n{response}")
         self.close()
 
         code = self.get_code(response)
         body = self.get_body(response)
-        return HTTPResponse(code, body)
+        headers = self.get_headers(response)
+        return HTTPResponse(code, body, headers)
 
+    #---POST---
     def POST(self, url, args=None):
         scheme, host, port, path, query = self.parse_url(url)
 
@@ -176,7 +206,8 @@ class HTTPClient(object):
 
         code = self.get_code(response)
         body = self.get_body(response)
-        return HTTPResponse(code, body)
+        headers = self.get_headers(response)
+        return HTTPResponse(code, body, headers)
 
     def command(self, url, command="GET", args=None):
         if (command == "POST"):
