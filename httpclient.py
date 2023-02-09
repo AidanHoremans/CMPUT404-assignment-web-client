@@ -175,7 +175,6 @@ class HTTPClient(object):
         print(f"---REQUEST---\n{request.body}")
         self.sendall(request.body)
         response = self.recvall(self.socket)
-        print(f"---RESPONSE---\n{response}")
         self.close()
 
         code = self.get_code(response)
